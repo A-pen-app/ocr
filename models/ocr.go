@@ -1,6 +1,8 @@
 package models
 
-import "time"
+import (
+	"time"
+)
 
 type OCRRawInfo struct {
 	IdentifyURL        *string `json:"identify_url,omitempty"`
@@ -21,11 +23,11 @@ type OCRInfo struct {
 }
 
 type OCREventMessage struct {
-	UserID    string     `json:"user_id"`
-	Payload   OCRRawInfo `json:"payload"`
-	CreatedAt time.Time  `json:"created_at"`
-	Type      string     `json:"type"`
-	Source    string     `json:"source"`
+	UserID    string    `json:"user_id"`
+	Payload   string    `json:"payload"`
+	CreatedAt time.Time `json:"created_at"`
+	Type      string    `json:"type"`
+	Source    string    `json:"source"`
 }
 
 type OCRMessageType string

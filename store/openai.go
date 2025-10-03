@@ -10,6 +10,7 @@ import (
 	"github.com/A-pen-app/mq/v2"
 	"github.com/A-pen-app/ocr/models"
 	"github.com/openai/openai-go/v2"
+	"github.com/tidwall/sjson"
 )
 
 type OpenAIConfig struct {
@@ -19,7 +20,7 @@ type OpenAIConfig struct {
 	MessageType models.OCRMessageType
 }
 
-type ocrStore struct {
+type openAIStore struct {
 	mq  mq.MQ
 	c   *openai.Client
 	cfg *OpenAIConfig
@@ -37,14 +38,14 @@ func NewOpenAIStore(mq mq.MQ, client *openai.Client, config *OpenAIConfig) OCR {
 		}
 	}
 
-	return &ocrStore{
+	return &openAIStore{
 		mq:  mq,
 		c:   client,
 		cfg: config,
 	}
 }
 
-func (os *ocrStore) ScanName(ctx context.Context, link string) (string, error) {
+func (os *openAIStore) ScanName(ctx context.Context, link string) (string, error) {
 
 	if os.c == nil {
 		return "", fmt.Errorf("openai client is not initialized")
@@ -88,7 +89,7 @@ func (os *ocrStore) ScanName(ctx context.Context, link string) (string, error) {
 }
 
 // ScanRawInfo scans the image and returns raw OCR information based on profession type
-func (os *ocrStore) ScanRawInfo(ctx context.Context, userID string, link string, platformType models.PlatformType) (*models.OCRRawInfo, error) {
+func (os *openAIStore) ScanRawInfo(ctx context.Context, userID string, link string, platformType models.PlatformType) (*models.OCRRawInfo, error) {
 
 	if os.c == nil {
 		return nil, fmt.Errorf("openai client is not initialized")
@@ -126,24 +127,26 @@ func (os *ocrStore) ScanRawInfo(ctx context.Context, userID string, link string,
 		return nil, fmt.Errorf("empty response content from OCR")
 	}
 
-	// Parse OCR response
-	ocr := models.OCRRawInfo{}
-	if err := json.Unmarshal([]byte(choice.Message.Content), &ocr); err != nil {
+	modifiedJSON, err := sjson.Set(choice.Message.Content, "identify_url", link)
+	if err != nil {
 		return nil, err
 	}
-
-	// Set identify_url after parsing
-	ocr.IdentifyURL = &link
 
 	// Send OCR raw data to Pub/Sub for BigQuery
 	if err := os.mq.Send(string(os.cfg.Topic), models.OCREventMessage{
 		UserID:    userID,
-		Payload:   ocr,
+		Payload:   modifiedJSON,
 		CreatedAt: time.Now(),
 		Type:      string(os.cfg.MessageType),
 		Source:    string(platformType),
 	}); err != nil {
 		logging.Errorw(ctx, "Failed to send ocr result", "error", err)
+	}
+
+	// Parse OCR response
+	ocr := models.OCRRawInfo{}
+	if err := json.Unmarshal([]byte(modifiedJSON), &ocr); err != nil {
+		return nil, err
 	}
 
 	return &ocr, nil
