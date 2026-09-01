@@ -14,7 +14,9 @@ import (
 
 type Config struct {
 	MaxToken int64
-	IsProd   bool
+	// Topic is where ScanRawInfo publishes its result; empty publishes nothing.
+	// mq accepts a projects/<project>/topics/<topic> path for another project.
+	Topic string
 }
 
 type ocrStore struct {
@@ -27,7 +29,6 @@ func NewOcrStore(mq mq.MQ, aiClient AIClient, config *Config) OCR {
 	if config == nil {
 		config = &Config{
 			MaxToken: 1024,
-			IsProd:   false,
 		}
 	}
 
@@ -141,19 +142,16 @@ func (s *ocrStore) ScanRawInfo(ctx context.Context, userID string, link string, 
 		return nil, err
 	}
 
-	ocrTopic := models.OCRTopicDev
-	if s.cfg.IsProd {
-		ocrTopic = models.OCRTopicProd
-	}
-
-	if err := s.mq.Send(string(ocrTopic), models.OCREventMessage{
-		UserID:    userID,
-		Payload:   modifiedJSON,
-		CreatedAt: time.Now(),
-		Type:      string(models.OCRMessageTypeIdentifyOCR),
-		Source:    string(platformType),
-	}); err != nil {
-		logging.Errorw(ctx, "Failed to send ocr result", "error", err)
+	if s.cfg.Topic != "" {
+		if err := s.mq.Send(s.cfg.Topic, models.OCREventMessage{
+			UserID:    userID,
+			Payload:   modifiedJSON,
+			CreatedAt: time.Now(),
+			Type:      string(models.OCRMessageTypeIdentifyOCR),
+			Source:    string(platformType),
+		}); err != nil {
+			logging.Errorw(ctx, "Failed to send ocr result", "error", err, "topic", s.cfg.Topic)
+		}
 	}
 
 	ocr := models.OCRRawInfo{}
